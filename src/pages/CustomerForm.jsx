@@ -1,20 +1,51 @@
+import { useEffect, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Input } from '../components/Input';
 import { ProductCounter } from '../components/ProductCounter';
+import api from '../api/axios'; // Importa tu instancia de axios configurada
 
 export const CustomerForm = () => {
-    const { register, handleSubmit, control, formState: { errors } } = useForm({
+    const [productos, setProductos] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    const { register, handleSubmit, control, formState: { errors }, reset } = useForm({
         defaultValues: {
-            botellon20l: 0,
-            pacaAgua: 0,
-            proxima_visita: '5' // Valor por defecto: 5 días
+            nombre: '',
+            telefono: '',
+            direccion: '',
+            proxima_visita: '5',
+            items: {} // Aquí guardaremos las cantidades dinámicas { id_producto: cantidad }
         }
     });
 
-    const onSubmit = (data) => {
-        console.log("Datos para la base de datos:", data);
-        // Aquí conectaremos con tu backend en el puerto 5001 después
+    // 1. Cargar productos desde la BD al iniciar el componente
+    useEffect(() => {
+        const fetchProducts = async () => {
+            try {
+                const { data } = await api.get('/products');
+                setProductos(data);
+
+                // Inicializar los valores de los productos en 0 en el formulario
+                const initialItems = {};
+                data.forEach(p => {
+                    initialItems[p.id] = 0;
+                });
+                reset(prev => ({ ...prev, items: initialItems }));
+                setLoading(false);
+            } catch (error) {
+                console.error("Error cargando productos:", error);
+                setLoading(false);
+            }
+        };
+        fetchProducts();
+    }, [reset]);
+
+    const onSubmit = async (data) => {
+        console.log("Datos para guardar en la BD:", data);
+        // Aquí llamarás a tu endpoint de ventas/clientes
     };
+
+    if (loading) return <div className="text-center p-10 font-bold">Cargando inventario...</div>;
 
     return (
         <div className="max-w-md mx-auto bg-white shadow-2xl rounded-2xl overflow-hidden my-4 border-t-8 border-[#013ea8]">
@@ -23,8 +54,9 @@ export const CustomerForm = () => {
 
                 <form onSubmit={handleSubmit(onSubmit)}>
                     {/* BLOQUE A: DATOS CLIENTE */}
-                    <Input label="Nombre del Cliente" name="nombre" register={register} errors={errors} placeholder="Ej: Tienda de Doña María" required />
+                    <Input label="Nombre / Razón Social" name="nombre" register={register} errors={errors} placeholder="Ej: Tienda de Doña María" required />
                     <Input label="Teléfono" name="telefono" register={register} errors={errors} placeholder="312..." required />
+
                     <div className="mb-4">
                         <label className="block text-gray-700 text-sm font-bold mb-2">Dirección y Referencia</label>
                         <textarea
@@ -36,18 +68,24 @@ export const CustomerForm = () => {
                         {errors.direccion && <p className="text-red-500 text-xs italic">{errors.direccion.message}</p>}
                     </div>
 
-                    {/* BLOQUE B: PRODUCTOS */}
+                    {/* BLOQUE B: PRODUCTOS DINÁMICOS DESDE LA BD */}
                     <h3 className="text-sm font-black text-gray-500 mb-3 uppercase italic">Productos Entregados</h3>
-                    <Controller
-                        name="botellon20l"
-                        control={control}
-                        render={({ field }) => <ProductCounter label="Botellón 20L" value={field.value} onChange={field.onChange} />}
-                    />
-                    <Controller
-                        name="pacaAgua"
-                        control={control}
-                        render={({ field }) => <ProductCounter label="Paca de Agua" value={field.value} onChange={field.onChange} />}
-                    />
+                    <div className="space-y-2">
+                        {productos.map((prod) => (
+                            <Controller
+                                key={prod.id}
+                                name={`items.${prod.id}`}
+                                control={control}
+                                render={({ field }) => (
+                                    <ProductCounter
+                                        label={prod.nombre}
+                                        value={field.value || 0}
+                                        onChange={field.onChange}
+                                    />
+                                )}
+                            />
+                        ))}
+                    </div>
 
                     {/* BLOQUE C: PRÓXIMA VISITA */}
                     <div className="mt-6 mb-8">
