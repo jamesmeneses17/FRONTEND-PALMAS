@@ -17,7 +17,10 @@ export const CustomerForm = () => {
         formState: { errors },
         reset,
         trigger,
-        getValues
+        getValues,
+        setError,
+        setValue,
+        watch
     } = useForm({
         mode: 'onChange',
         defaultValues: {
@@ -153,8 +156,8 @@ export const CustomerForm = () => {
         try {
             const { data } = await api.get(`/customers/check/${identificacion}`);
             if (data.exists) {
-                // UX: Notificación suave en lugar de alerta de error
-                const confirmar = window.confirm(`✅ Cliente encontrado: ${data.cliente.nombre}\n\n¿Deseas cargar sus datos y continuar a Productos?`);
+                const confirmar = window.confirm(`⚠️ Cliente encontrado: ${data.cliente.nombre}\n\n¿Es una nueva venta para este cliente?\n(OK = Sí, cargar datos / Cancelar = No, corregir)`);
+
                 if (confirmar) {
                     const currentValues = getValues();
                     reset({
@@ -165,9 +168,15 @@ export const CustomerForm = () => {
                         telefono_2: data.cliente.telefono_2 || '',
                         direccion: data.cliente.direccion
                     });
-
-                    // Saltamos al Paso 2 inmediatamente
                     setStep(2);
+                } else {
+                    // Si dice que NO, bloqueamos el uso de esta cédula porque ya existe
+                    setError('identificacion', {
+                        type: 'manual',
+                        message: 'Esta identificación ya pertenece a otro cliente. Úsala o corregíla.'
+                    });
+                    // Opcional: Limpiar campo, pero a veces es mejor dejarlo para que lo corrija
+                    // setValue('identificacion', ''); 
                 }
             }
         } catch (error) {
@@ -182,7 +191,8 @@ export const CustomerForm = () => {
         try {
             const { data } = await api.get(`/customers/check-phone/${telefono}`);
             if (data.exists) {
-                const confirmar = window.confirm(`✅ Cliente encontrado por teléfono: ${data.cliente.nombre}\n\n¿Deseas cargar sus datos y continuar a Productos?`);
+                const confirmar = window.confirm(`⚠️ Cliente encontrado por teléfono: ${data.cliente.nombre}\n\n¿Es una nueva venta para este cliente?\n(OK = Sí, cargar datos / Cancelar = No, usar otro teléfono)`);
+
                 if (confirmar) {
                     const currentValues = getValues();
                     reset({
@@ -194,6 +204,11 @@ export const CustomerForm = () => {
                         direccion: data.cliente.direccion
                     });
                     setStep(2);
+                } else {
+                    setError('telefono', {
+                        type: 'manual',
+                        message: 'Este teléfono ya está registrado.'
+                    });
                 }
             }
         } catch (error) {
@@ -298,10 +313,13 @@ export const CustomerForm = () => {
                     )}
 
                     {/* PASO 3: VISITA */}
+                    {/* PASO 3: VISITA */}
                     {step === 3 && (
                         <div className="animate-in fade-in duration-300">
                             <h3 className="text-sm font-black text-gray-400 mb-6 uppercase text-center">Programar Visita</h3>
-                            <div className="grid grid-cols-3 gap-3 mb-8">
+
+                            {/* Opciones rápidas */}
+                            <div className="grid grid-cols-3 gap-3 mb-4">
                                 {['3', '5', '8'].map(dias => (
                                     <label key={dias} className="flex flex-col items-center p-4 border-2 rounded-2xl cursor-pointer transition-all has-[:checked]:border-[#013ea8] has-[:checked]:bg-blue-50">
                                         <input type="radio" {...register("proxima_visita")} value={dias} className="hidden" />
@@ -309,6 +327,33 @@ export const CustomerForm = () => {
                                         <span className="text-[10px] uppercase font-bold text-gray-400">Días</span>
                                     </label>
                                 ))}
+                            </div>
+
+                            {/* Opción Manual para rapidez (4, 6, 10 días...) */}
+                            <div className="mt-4">
+                                <label className="block text-gray-700 text-[10px] font-bold mb-2 uppercase text-center">O personalizar días</label>
+                                <input
+                                    type="number"
+                                    {...register("proxima_visita")}
+                                    placeholder="Ej: 4"
+                                    className="w-full text-center py-3 border-2 border-gray-200 rounded-xl focus:border-[#013ea8] focus:ring-0 font-bold text-lg"
+                                    onFocus={(e) => e.target.select()} // Para que sea fácil borrar y escribir
+                                />
+                            </div>
+
+                            {/* Feedback visual de la fecha real */}
+                            <div className="mt-6 p-3 bg-blue-50 rounded-lg text-center">
+                                <p className="text-[10px] font-bold text-[#013ea8] uppercase">
+                                    Sugerencia de regreso:
+                                </p>
+                                <p className="text-sm font-black text-gray-700">
+                                    {(() => {
+                                        const d = new Date();
+                                        const val = watch("proxima_visita") || 0;
+                                        d.setDate(d.getDate() + parseInt(val));
+                                        return d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+                                    })()}
+                                </p>
                             </div>
                         </div>
                     )}
