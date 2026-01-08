@@ -71,7 +71,7 @@ export const CustomerForm = () => {
     const nextStep = async (e) => {
         if (e) e.preventDefault();
 
-        // PASO 1 → Validar datos obligatorios del cliente
+        // PASO 1 → Validar datos obligatorios del cliente y unicidad en BD
         if (step === 1) {
             const valid = await trigger([
                 'identificacion',
@@ -80,7 +80,11 @@ export const CustomerForm = () => {
                 'direccion'
             ]);
 
-            if (valid) setStep(2);
+            if (!valid) return;
+
+            // Al permitir ventas recurrentes, ya no bloqueamos si existe el usuario.
+            // El backend hará "Upsert" (Actualizar o Crear).
+            setStep(2);
             return;
         }
 
@@ -142,6 +146,61 @@ export const CustomerForm = () => {
         }
     };
 
+    const handleCheckIdentificacion = async () => {
+        const identificacion = getValues('identificacion');
+        if (!identificacion || identificacion.length < 5) return;
+
+        try {
+            const { data } = await api.get(`/customers/check/${identificacion}`);
+            if (data.exists) {
+                // UX: Notificación suave en lugar de alerta de error
+                const confirmar = window.confirm(`✅ Cliente encontrado: ${data.cliente.nombre}\n\n¿Deseas cargar sus datos y continuar a Productos?`);
+                if (confirmar) {
+                    const currentValues = getValues();
+                    reset({
+                        ...currentValues,
+                        identificacion: identificacion,
+                        nombre: data.cliente.nombre,
+                        telefono: data.cliente.telefono,
+                        telefono_2: data.cliente.telefono_2 || '',
+                        direccion: data.cliente.direccion
+                    });
+
+                    // Saltamos al Paso 2 inmediatamente
+                    setStep(2);
+                }
+            }
+        } catch (error) {
+            console.error("Error al validar identificación:", error);
+        }
+    };
+
+    const handleCheckTelefono = async () => {
+        const telefono = getValues('telefono');
+        if (!telefono || telefono.length < 7) return;
+
+        try {
+            const { data } = await api.get(`/customers/check-phone/${telefono}`);
+            if (data.exists) {
+                const confirmar = window.confirm(`✅ Cliente encontrado por teléfono: ${data.cliente.nombre}\n\n¿Deseas cargar sus datos y continuar a Productos?`);
+                if (confirmar) {
+                    const currentValues = getValues();
+                    reset({
+                        ...currentValues,
+                        identificacion: currentValues.identificacion || data.cliente.identificacion_nit || '',
+                        nombre: data.cliente.nombre,
+                        telefono: data.cliente.telefono,
+                        telefono_2: data.cliente.telefono_2 || '',
+                        direccion: data.cliente.direccion
+                    });
+                    setStep(2);
+                }
+            }
+        } catch (error) {
+            console.error("Error al validar teléfono:", error);
+        }
+    };
+
     if (loading) {
         return (
             <div className="text-center p-10 font-bold text-[#013ea8]">
@@ -173,9 +232,35 @@ export const CustomerForm = () => {
                     {step === 1 && (
                         <div className="animate-in fade-in duration-300">
                             <h3 className="text-sm font-black text-gray-400 mb-4 uppercase">Información del Cliente</h3>
-                            <Input label="Identificación / NIT" name="identificacion" register={register} errors={errors} placeholder="Ej: 12345678" required />
+                            <Input
+                                label="Identificación / NIT"
+                                name="identificacion"
+                                register={register}
+                                errors={errors}
+                                placeholder="Ej: 12345678"
+                                required
+                                onBlur={handleCheckIdentificacion}
+                            />
                             <Input label="Nombre / Razón Social" name="nombre" register={register} errors={errors} placeholder="Ej: Tienda de Doña María" required />
-                            <Input label="Teléfono" name="telefono" register={register} errors={errors} placeholder="312..." required />
+                            <div className="grid grid-cols-2 gap-2">
+                                <Input
+                                    label="Teléfono 1"
+                                    name="telefono"
+                                    register={register}
+                                    errors={errors}
+                                    placeholder="312..."
+                                    required
+                                    onBlur={handleCheckTelefono}
+                                />
+                                <div className="mb-4">
+                                    <label className="block text-gray-700 text-sm font-bold mb-2">Teléfono 2 <span className="text-gray-400 font-normal">(Opcional)</span></label>
+                                    <input
+                                        {...register("telefono_2")}
+                                        className="shadow-sm appearance-none border rounded-lg w-full py-3 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-[#013ea8] transition-all border-gray-300"
+                                        placeholder="Opcional"
+                                    />
+                                </div>
+                            </div>
                             <div className="mb-4">
                                 <label className="block text-gray-700 text-xs font-bold mb-2 uppercase tracking-tighter">Dirección y Referencia</label>
                                 <textarea
@@ -201,7 +286,7 @@ export const CustomerForm = () => {
                                         control={control}
                                         render={({ field }) => (
                                             <ProductCounter
-                                                label={prod.nombre_producto}
+                                                label={prod.nombre}
                                                 value={field.value || 0}
                                                 onChange={field.onChange}
                                             />
