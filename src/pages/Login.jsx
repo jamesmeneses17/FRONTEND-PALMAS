@@ -11,7 +11,8 @@ export const Login = ({ onLoginSuccess }) => {
 
     const onSubmit = async (data) => {
         try {
-            await loginRequest(data);
+            const res = await loginRequest(data);
+            localStorage.setItem('token', res.data.access_token);
             onLoginSuccess();
         } catch (err) {
             setErrorMsg(typeof err === 'string' ? err : 'Credenciales incorrectas');

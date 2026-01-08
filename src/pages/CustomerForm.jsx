@@ -2,111 +2,262 @@ import { useEffect, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Input } from '../components/Input';
 import { ProductCounter } from '../components/ProductCounter';
-import api from '../api/axios'; // Importa tu instancia de axios configurada
+import api from '../api/axios';
 
 export const CustomerForm = () => {
     const [productos, setProductos] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [step, setStep] = useState(1);
 
-    const { register, handleSubmit, control, formState: { errors }, reset } = useForm({
+    const {
+        register,
+        handleSubmit,
+        control,
+        formState: { errors },
+        reset,
+        trigger,
+        getValues
+    } = useForm({
+        mode: 'onChange',
         defaultValues: {
+            identificacion: '',
             nombre: '',
             telefono: '',
+            telefono_2: '',
             direccion: '',
             proxima_visita: '5',
-            items: {} // Aquí guardaremos las cantidades dinámicas { id_producto: cantidad }
+            items: {}
         }
     });
 
-    // 1. Cargar productos desde la BD al iniciar el componente
+    /* ===============================
+       CARGA DE PRODUCTOS
+    =============================== */
     useEffect(() => {
         const fetchProducts = async () => {
             try {
                 const { data } = await api.get('/products');
                 setProductos(data);
 
-                // Inicializar los valores de los productos en 0 en el formulario
                 const initialItems = {};
                 data.forEach(p => {
                     initialItems[p.id] = 0;
                 });
-                reset(prev => ({ ...prev, items: initialItems }));
+
+                reset({
+                    identificacion: '',
+                    nombre: '',
+                    telefono: '',
+                    telefono_2: '',
+                    direccion: '',
+                    proxima_visita: '5',
+                    items: initialItems
+                });
+
                 setLoading(false);
             } catch (error) {
-                console.error("Error cargando productos:", error);
+                console.error('Error cargando productos:', error);
                 setLoading(false);
             }
         };
+
         fetchProducts();
     }, [reset]);
 
-    const onSubmit = async (data) => {
-        console.log("Datos para guardar en la BD:", data);
-        // Aquí llamarás a tu endpoint de ventas/clientes
+    /* ===============================
+       NAVEGACIÓN CON VALIDACIÓN
+    =============================== */
+    const nextStep = async (e) => {
+        if (e) e.preventDefault();
+
+        // PASO 1 → Validar datos obligatorios del cliente
+        if (step === 1) {
+            const valid = await trigger([
+                'identificacion',
+                'nombre',
+                'telefono',
+                'direccion'
+            ]);
+
+            if (valid) setStep(2);
+            return;
+        }
+
+        // PASO 2 → Validar que al menos un producto tenga cantidad
+        if (step === 2) {
+            const items = getValues('items');
+            const hasProducts = Object.values(items || {}).some(v => v > 0);
+
+            if (!hasProducts) {
+                alert('⚠️ Debes seleccionar al menos un producto para continuar');
+                return;
+            }
+
+            setStep(3);
+        }
     };
 
-    if (loading) return <div className="text-center p-10 font-bold">Cargando inventario...</div>;
+    const prevStep = (e) => {
+        if (e) e.preventDefault();
+        setStep(step - 1);
+    };
+
+    /* ===============================
+       SUBMIT FINAL (SOLO PASO 3)
+    =============================== */
+    const onSubmit = async (formData) => {
+        if (step !== 3) return; // Blindaje contra envíos accidentales
+
+        setIsSubmitting(true);
+        try {
+            const response = await api.post('/sales', formData);
+
+            alert(`✅ ¡Registro Exitoso! Cliente ID: ${response.data.clienteId}`);
+
+            setStep(1);
+
+            const resetItems = {};
+            productos.forEach(p => {
+                resetItems[p.id] = 0;
+            });
+
+            reset({
+                identificacion: '',
+                nombre: '',
+                telefono: '',
+                telefono_2: '',
+                direccion: '',
+                proxima_visita: '5',
+                items: resetItems
+            });
+        } catch (error) {
+            console.error('Error al guardar:', error);
+            alert(
+                '❌ Error: ' +
+                (error.response?.data?.message || 'No se pudo completar el registro')
+            );
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="text-center p-10 font-bold text-[#013ea8]">
+                Cargando inventario de Agua Las Palmas...
+            </div>
+        );
+    }
 
     return (
         <div className="max-w-md mx-auto bg-white shadow-2xl rounded-2xl overflow-hidden my-4 border-t-8 border-[#013ea8]">
             <div className="p-6">
-                <h2 className="text-xl font-bold text-gray-800 mb-6 border-b pb-2 text-center uppercase tracking-wider">Nuevo Registro</h2>
 
-                <form onSubmit={handleSubmit(onSubmit)}>
-                    {/* BLOQUE A: DATOS CLIENTE */}
-                    <Input label="Nombre / Razón Social" name="nombre" register={register} errors={errors} placeholder="Ej: Tienda de Doña María" required />
-                    <Input label="Teléfono" name="telefono" register={register} errors={errors} placeholder="312..." required />
+                {/* INDICADOR DE PASOS VISUAL */}
+                <div className="flex justify-between mb-8 text-[10px] font-black uppercase tracking-widest text-gray-300">
+                    <span className={step >= 1 ? 'text-[#013ea8]' : ''}>1. Cliente</span>
+                    <span className={step >= 2 ? 'text-[#013ea8]' : ''}>2. Productos</span>
+                    <span className={step >= 3 ? 'text-[#013ea8]' : ''}>3. Visita</span>
+                </div>
 
-                    <div className="mb-4">
-                        <label className="block text-gray-700 text-sm font-bold mb-2">Dirección y Referencia</label>
-                        <textarea
-                            {...register("direccion", { required: "La dirección es obligatoria" })}
-                            className={`w-full border rounded-lg p-3 text-sm focus:ring-2 focus:ring-[#013ea8] outline-none ${errors.direccion ? 'border-red-500' : 'border-gray-300'}`}
-                            placeholder="Barrio Central, frente al parque..."
-                            rows="2"
-                        />
-                        {errors.direccion && <p className="text-red-500 text-xs italic">{errors.direccion.message}</p>}
-                    </div>
-
-                    {/* BLOQUE B: PRODUCTOS DINÁMICOS DESDE LA BD */}
-                    <h3 className="text-sm font-black text-gray-500 mb-3 uppercase italic">Productos Entregados</h3>
-                    <div className="space-y-2">
-                        {productos.map((prod) => (
-                            <Controller
-                                key={prod.id}
-                                name={`items.${prod.id}`}
-                                control={control}
-                                render={({ field }) => (
-                                    <ProductCounter
-                                        label={prod.nombre}
-                                        value={field.value || 0}
-                                        onChange={field.onChange}
-                                    />
-                                )}
-                            />
-                        ))}
-                    </div>
-
-                    {/* BLOQUE C: PRÓXIMA VISITA */}
-                    <div className="mt-6 mb-8">
-                        <label className="block text-gray-700 text-sm font-bold mb-3">Sugerir próxima visita en:</label>
-                        <div className="grid grid-cols-3 gap-2">
-                            {['3', '5', '8'].map(dias => (
-                                <label key={dias} className="flex flex-col items-center p-2 border rounded-xl cursor-pointer hover:bg-blue-50 transition-colors has-[:checked]:bg-[#013ea8] has-[:checked]:text-white">
-                                    <input type="radio" {...register("proxima_visita")} value={dias} className="hidden" />
-                                    <span className="text-lg font-bold">{dias}</span>
-                                    <span className="text-[10px] uppercase">Días</span>
-                                </label>
-                            ))}
+                <form
+                    onSubmit={handleSubmit(onSubmit)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' && step < 3 && e.target.tagName !== 'TEXTAREA') {
+                            e.preventDefault();
+                        }
+                    }}
+                >
+                    {/* PASO 1: DATOS CLIENTE */}
+                    {step === 1 && (
+                        <div className="animate-in fade-in duration-300">
+                            <h3 className="text-sm font-black text-gray-400 mb-4 uppercase">Información del Cliente</h3>
+                            <Input label="Identificación / NIT" name="identificacion" register={register} errors={errors} placeholder="Ej: 12345678" required />
+                            <Input label="Nombre / Razón Social" name="nombre" register={register} errors={errors} placeholder="Ej: Tienda de Doña María" required />
+                            <Input label="Teléfono" name="telefono" register={register} errors={errors} placeholder="312..." required />
+                            <div className="mb-4">
+                                <label className="block text-gray-700 text-xs font-bold mb-2 uppercase tracking-tighter">Dirección y Referencia</label>
+                                <textarea
+                                    {...register("direccion", { required: "La dirección es obligatoria" })}
+                                    className={`w-full border rounded-xl p-3 text-sm focus:ring-2 focus:ring-[#013ea8] outline-none ${errors.direccion ? 'border-red-500' : 'border-gray-200'}`}
+                                    placeholder="Barrio Central, frente al parque..."
+                                    rows="2"
+                                />
+                                {errors.direccion && <p className="text-red-500 text-[10px] italic mt-1">{errors.direccion.message}</p>}
+                            </div>
                         </div>
-                    </div>
+                    )}
 
-                    <button
-                        type="submit"
-                        className="w-full py-4 bg-[#013ea8] text-white font-black rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all text-lg"
-                    >
-                        GUARDAR Y FINALIZAR
-                    </button>
+                    {/* PASO 2: PRODUCTOS */}
+                    {step === 2 && (
+                        <div className="animate-in fade-in duration-300">
+                            <h3 className="text-sm font-black text-gray-400 mb-4 uppercase italic">Productos Entregados</h3>
+                            <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+                                {productos.map((prod) => (
+                                    <Controller
+                                        key={prod.id}
+                                        name={`items.${prod.id}`}
+                                        control={control}
+                                        render={({ field }) => (
+                                            <ProductCounter
+                                                label={prod.nombre_producto}
+                                                value={field.value || 0}
+                                                onChange={field.onChange}
+                                            />
+                                        )}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* PASO 3: VISITA */}
+                    {step === 3 && (
+                        <div className="animate-in fade-in duration-300">
+                            <h3 className="text-sm font-black text-gray-400 mb-6 uppercase text-center">Programar Visita</h3>
+                            <div className="grid grid-cols-3 gap-3 mb-8">
+                                {['3', '5', '8'].map(dias => (
+                                    <label key={dias} className="flex flex-col items-center p-4 border-2 rounded-2xl cursor-pointer transition-all has-[:checked]:border-[#013ea8] has-[:checked]:bg-blue-50">
+                                        <input type="radio" {...register("proxima_visita")} value={dias} className="hidden" />
+                                        <span className="text-2xl font-black text-gray-700">{dias}</span>
+                                        <span className="text-[10px] uppercase font-bold text-gray-400">Días</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* BOTONES DE ACCIÓN */}
+                    <div className="flex gap-3 mt-8">
+                        {step > 1 && (
+                            <button
+                                type="button"
+                                onClick={prevStep}
+                                className="w-1/3 py-4 bg-gray-100 text-gray-500 font-bold rounded-xl active:scale-95 transition-all uppercase text-[10px]"
+                            >
+                                Atrás
+                            </button>
+                        )}
+
+                        {step < 3 ? (
+                            <button
+                                type="button"
+                                onClick={nextStep}
+                                className="flex-1 py-4 bg-[#013ea8] text-white font-black rounded-xl shadow-lg active:scale-95 transition-all tracking-widest"
+                            >
+                                SIGUIENTE
+                            </button>
+                        ) : (
+                            <button
+                                type="submit"
+                                disabled={isSubmitting}
+                                className={`flex-1 py-4 text-white font-black rounded-xl shadow-lg transition-all tracking-widest ${isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#013ea8] active:scale-95'}`}
+                            >
+                                {isSubmitting ? 'GUARDANDO...' : 'FINALIZAR'}
+                            </button>
+                        )}
+                    </div>
                 </form>
             </div>
         </div>
