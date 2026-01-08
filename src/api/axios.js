@@ -1,7 +1,10 @@
 import axios from 'axios';
 
+// Usamos la variable de entorno o localhost como respaldo
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api/v1';
+
 const api = axios.create({
-    baseURL: 'http://localhost:5001/api/v1', // Puerto del backend
+    baseURL: API_URL,
 });
 
 // Interceptor para agregar el token si existe (prepárate para el futuro)
